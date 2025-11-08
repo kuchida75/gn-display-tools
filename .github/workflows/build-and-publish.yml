@@ -1,6 +1,4 @@
-
 name: build-and-publish
-
 on:
   push:
     tags:
@@ -9,6 +7,8 @@ on:
 jobs:
   release-and-apt:
     runs-on: ubuntu-latest
+    env:
+      HAVE_GPG: ${{ secrets.GPG_PRIVATE_KEY != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,9 +21,11 @@ jobs:
 
       - name: Prepare APT repo
         run: |
+          set -e
           mkdir -p dist/apt
           cp deb/*.deb dist/apt/
           pushd dist/apt
+          sudo apt-get update && sudo apt-get install -y dpkg-dev
           dpkg-scanpackages . /dev/null | tee Packages > /dev/null
           gzip -k -f Packages
           cat > Release <<EOF
@@ -36,13 +38,18 @@ Components: main
 Description: gn-display-tools apt repo
 Date: $(date -Ru)
 EOF
-          # Sign Release (clear and inline)
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
-          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" -abs -o Release.gpg Release
-          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --clearsign -o InRelease Release
           popd
 
-      - name: Publish to gh-pages
+      - name: Import GPG and sign (optional)
+        if: env.HAVE_GPG == 'true'
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          (cd dist/apt && \
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" -abs -o Release.gpg Release && \
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --clearsign -o InRelease Release)
+
+      - name: Publish to gh-pages (only if signed)
+        if: env.HAVE_GPG == 'true'
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
