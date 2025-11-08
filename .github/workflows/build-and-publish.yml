@@ -1,0 +1,50 @@
+
+name: build-and-publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release-and-apt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            deb/*.deb
+
+      - name: Prepare APT repo
+        run: |
+          mkdir -p dist/apt
+          cp deb/*.deb dist/apt/
+          pushd dist/apt
+          dpkg-scanpackages . /dev/null | tee Packages > /dev/null
+          gzip -k -f Packages
+          cat > Release <<EOF
+Origin: gn-display-tools
+Label: gn-display-tools
+Suite: apt
+Codename: apt
+Architectures: all
+Components: main
+Description: gn-display-tools apt repo
+Date: $(date -Ru)
+EOF
+          # Sign Release (clear and inline)
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" -abs -o Release.gpg Release
+          gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --clearsign -o InRelease Release
+          popd
+
+      - name: Publish to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages

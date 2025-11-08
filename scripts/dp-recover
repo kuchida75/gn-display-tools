@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# This copy is for reference; the installed binary lives at /usr/local/bin/dp-recover.
+dp-recover "$@"
